@@ -134,6 +134,22 @@ label{font-weight:700;color:var(--navy)}
 .tryit .card{padding:12px}
 .tryit pre{margin:0 0 8px}
 
+/* مختبر باي تشارم داخل الدرس */
+.lab{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:12px;align-items:start}
+@media (max-width:1000px){.lab{grid-template-columns:1fr}}
+.lab-ide{height:480px}
+.lab-ch{display:flex;flex-direction:column;gap:10px}
+.lab-h{color:var(--p700);font-size:1.05rem}
+.ch{background:#fff;border:2px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.ch.ok{border-color:#86EFAC;background:#F6FEF9}
+.ch-t{display:flex;gap:8px;align-items:flex-start;line-height:1.6}
+.ch-n{width:26px;height:26px;border-radius:50%;background:var(--p100);color:var(--p700);display:grid;place-items:center;font-weight:800;flex-shrink:0;font-size:.85rem}
+.ch.ok .ch-n{background:var(--ok);color:#fff}
+.ch-fb:empty{display:none}
+.ch-fb .fb-ok,.ch-fb .fb-bad{display:block;padding:8px 10px;font-size:.92rem}
+/* المختبر الحر */
+.free-lab{height:calc(100vh - 190px);min-height:480px}
+
 /* الكود داخل الأسئلة */
 pre.code{background:#2B2B2B;color:#A9B7C6;border-radius:12px;padding:10px 14px;font-family:var(--mono);font-size:17px;line-height:1.6;direction:ltr;text-align:left;overflow:auto;margin:8px 0;unicode-bidi:plaintext}
 

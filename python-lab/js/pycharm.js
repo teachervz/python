@@ -33,7 +33,7 @@ const EXPL = {
 export function createPyCharm(host, opts = {}) {
   const o = Object.assign({
     mode: 'editor', steps: [], tries: [], files: null, active: null, project: 'pythonProject',
-    explainErrors: true, showGuide: true, title: '', onStep: () => {}, onComplete: () => {}, onRun: () => {}, onHint: () => {}
+    explainErrors: true, showGuide: true, title: '', onStep: () => {}, onComplete: () => {}, onRun: () => {}, onHint: () => {}, onChange: () => {}
   }, opts);
   const st = {
     phase: o.mode === 'task' ? 'desk' : 'ide', proj: o.project, files: {}, tabs: [], active: null,
@@ -290,7 +290,7 @@ export function createPyCharm(host, opts = {}) {
     if (st.files[f] !== undefined) { er.textContent = `الملف ${f} موجود مسبقًا`; return; }
     st.files[f] = ''; st.created.push(f);
     if (!st.tabs.includes(f)) st.tabs.push(f);
-    st.active = f; closePops(); renderAll(); mark(4); toast(`تم إنشاء الملف ${f}`);
+    st.active = f; closePops(); renderAll(); mark(4); toast(`تم إنشاء الملف ${f}`); o.onChange(st.files);
     setTimeout(() => { const ta = $('.pc-ta', edb); ta && ta.focus(); }, 60);
   }
 
@@ -317,15 +317,16 @@ export function createPyCharm(host, opts = {}) {
     refresh();
   }
   function del(f) {
-    if (o.mode !== 'task') { toast('لا يمكن حذف ملف السؤال'); return; }
+    if (o.mode === 'editor') { toast('لا يمكن حذف ملف السؤال'); return; }
+    if (o.mode === 'free' && !confirm(`حذف الملف ${f}؟`)) return;
     delete st.files[f]; st.tabs = st.tabs.filter(t => t !== f);
     if (st.active === f) st.active = st.tabs[st.tabs.length - 1] || null;
-    renderAll(); toast(`تم حذف ${f}`);
+    renderAll(); toast(`تم حذف ${f}`); o.onChange(st.files);
   }
   function openFile(f) { if (!st.tabs.includes(f)) st.tabs.push(f); st.active = f; renderAll(); }
 
   function renderTabs() {
-    tabsEl.innerHTML = st.tabs.map(f => `<div class="pc-tab ${f === st.active ? 'on' : ''}" data-f="${esc(f)}">🐍 ${esc(f)}${o.mode === 'task' ? '<span class="x" title="Close">×</span>' : ''}</div>`).join('');
+    tabsEl.innerHTML = st.tabs.map(f => `<div class="pc-tab ${f === st.active ? 'on' : ''}" data-f="${esc(f)}">🐍 ${esc(f)}${o.mode !== 'editor' ? '<span class="x" title="Close">×</span>' : ''}</div>`).join('');
     $$('.pc-tab', tabsEl).forEach(t => t.onclick = e => {
       const f = t.dataset.f;
       if (e.target.classList.contains('x')) { st.tabs = st.tabs.filter(x => x !== f); if (st.active === f) st.active = st.tabs[st.tabs.length - 1] || null; }
@@ -342,7 +343,7 @@ export function createPyCharm(host, opts = {}) {
     ta.addEventListener('input', () => {
       const fixed = fixSmartPunctuation(ta.value);
       if (fixed !== ta.value) { const p = ta.selectionStart; ta.value = fixed; ta.selectionStart = ta.selectionEnd = p; }
-      st.files[st.active] = ta.value; syncEd(); checkPrint();
+      st.files[st.active] = ta.value; syncEd(); checkPrint(); o.onChange(st.files);
     });
     ta.addEventListener('scroll', () => { const hl = $('.pc-hl', edb); hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; $('.pc-gutter', edb).scrollTop = ta.scrollTop; });
     ta.addEventListener('keydown', edKey);
@@ -482,6 +483,11 @@ export function createPyCharm(host, opts = {}) {
   renderAll(); renderSteps(); refresh();
 
   return {
+    files: () => Object.assign({}, st.files),
+    addFile(name, code, overwrite) {
+      if (st.files[name] === undefined || overwrite) st.files[name] = code;
+      openFile(name); o.onChange(st.files);
+    },
     getCode: (f = st.active) => st.files[f],
     setCode(code, f = st.active) { st.files[f] = code; renderEditor(); },
     run: () => run(runTarget()),

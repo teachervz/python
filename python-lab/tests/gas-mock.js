@@ -20,6 +20,7 @@
         return out;
       },
       setValues(v) {
+        window.__gasWrites = (window.__gasWrites || 0) + 1;
         for (let i = 0; i < nr; i++) { const row = sh.rows[r - 1 + i] || (sh.rows[r - 1 + i] = []); for (let j = 0; j < nc; j++) row[c - 1 + j] = v[i][j] instanceof Date ? new Date(v[i][j]) : v[i][j]; }
         return this;
       },

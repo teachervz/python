@@ -170,6 +170,20 @@ async def student_flow(ctx):
             await pg.locator('.tryit .b-try').nth(0).click()
             await pg.wait_for_selector('.try-fb .fb-ok', timeout=30000)
             check('جرب بنفسك: مقارنة التوقع بالناتج الحقيقي', True)
+            # مختبر باي تشارم داخل النشاط + التحديات
+            await pg.locator('.ch .b-open').nth(0).click()
+            await pg.wait_for_selector('.lab .pc-tab.on:has-text("challenge1.py")')
+            await pg.locator('.ch .b-check').nth(0).click()
+            await pg.wait_for_selector('.ch .fb-bad', timeout=30000)
+            check('التحدي: حل خاطئ يعطي تغذية راجعة', 'False' in await pg.locator('.ch-fb').nth(0).inner_text())
+            await pg.fill('.lab .pc-ta', 'x=5\ny=5\nz=x==y\nprint(z)\n')
+            await pg.locator('.ch .b-check').nth(0).click()
+            await pg.wait_for_selector('.ch.ok', timeout=30000)
+            check('التحدي: الحل الصحيح يُقبل ✓', True)
+            await pg.click('.lab .pc-runbtn')
+            await pg.wait_for_function("document.querySelector('.lab .pc-console').textContent.includes('exit code 0')", timeout=30000)
+            check('المختبر داخل الدرس يشغّل الكود', 'True' in await pg.inner_text('.lab .pc-console'))
+            await shot(pg, 's_lab')
         if act == 'g4_logic':
             await pg.click('.b-a')
             sel = await pg.locator('.truth tr.sel td').all_inner_texts()
@@ -179,6 +193,7 @@ async def student_flow(ctx):
 
     await pg.wait_for_selector('.q-prompt', timeout=15000)
     check('الانتقال للتدريب بعد إكمال التعلم الموجه', True)
+    check('الشرح الموجّه مقفل أثناء التدريب المستقل', await pg.locator('.nav-item[data-id="g2_compare"]').is_disabled())
     page_text = await pg.inner_text('#pane')
     check('لا تلميحات ولا شرح في التدريب المستقل', 'تلميح' not in page_text and 'b-hint' not in await pg.inner_html('#pane'))
     await shot(pg, 's_practice')
@@ -221,6 +236,26 @@ async def student_flow(ctx):
     pct = await pg.inner_text('.result-big')
     check('التسليم والنتيجة ١٠٠٪', '١٠٠' in pct, pct)
     await shot(pg, 's_results')
+    check('الشرح يُفتح بعد التسليم', not await pg.locator('.nav-item[data-id="g2_compare"]').is_disabled())
+
+    # ---- المختبر الحر ----
+    await pg.click('#btn-lab')
+    await pg.wait_for_selector('.free-lab .pc')
+    await pg.click('.free-lab .m-file')
+    await pg.click('[data-cmd=new]')
+    await pg.click('[data-new=py]')
+    await pg.fill('.pc-name', 'myfile')
+    await pg.press('.pc-name', 'Enter')
+    await pg.fill('.free-lab .pc-ta', 'a = 7\nprint(a > 3 and a < 10)\n')
+    await pg.click('.free-lab .pc-runbtn')
+    await pg.wait_for_function("document.querySelector('.free-lab .pc-console').textContent.includes('exit code 0')", timeout=30000)
+    check('المختبر الحر: إنشاء ملف وتشغيله', 'True' in await pg.inner_text('.free-lab .pc-console'))
+    await shot(pg, 's_free_lab')
+    await pg.click('#btn-home')
+    await pg.click('#btn-lab')
+    await pg.wait_for_selector('.free-lab .tr-file[data-f="myfile.py"]')
+    check('المختبر الحر: الملفات تبقى محفوظة', True)
+    await pg.click('#btn-home')
 
     ans = await sheet(pg, 'نتائج التقييم')
     check('12 إجابة محفوظة في ورقة «نتائج التقييم»', len(ans) - 1 == 12, str(len(ans) - 1))
@@ -327,6 +362,12 @@ async def backend_tests(pg):
     check('الوضع الفوري: صحة وشرح بعد الإرسال', im.get('correct') is True and im.get('explanation'))
     await gas(pg, {'action': 'tSettings', 'teacherToken': tt, 'values': {'feedback_mode': 'after_exercise'}})
 
+    # الأداء: مزامنة 40 حدثًا = عدد قليل من عمليات الكتابة
+    await pg.evaluate('() => { window.__gasWrites = 0; }')
+    many = [{'id': f'perf-{i}', 'type': 'guided_step', 'at': '2026-01-01T00:00:00Z', 'lesson': 'lesson_01', 'activity': 'g2_compare', 'step': str(i)} for i in range(40)]
+    sr = await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': a['sessionId'], 'events': many})
+    writes = await pg.evaluate('() => window.__gasWrites')
+    check('مزامنة 40 حدثًا تُكتب دفعة واحدة (≤ 3 عمليات كتابة)', sr['ok'] and len(sr['accepted']) == 40 and writes <= 3, str(writes))
     # الخمول وانقطاع الاتصال
     sid = a['sessionId']
     await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': sid, 'events': [{'id': 'i1', 'type': 'idle', 'at': '2020-01-01T00:00:00Z'}]})

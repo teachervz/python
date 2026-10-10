@@ -2,7 +2,7 @@
    (Deploy ← New deployment ← Web app). ينتهي الرابط بـ /exec
    راجعي docs/SETUP.md للخطوات. */
 export const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbwLrRKPApA0FA5Nfa5Hi_5jPsSWXB-eASblRNLYaC1MhglFIqGBdKFQ99KQMWMUUQ798w/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbygpwr-uNlrO7AEA-Cg0T56N_kZjVSg0sNjO6UZYSfg1TXwXuMK5n_WlQOlUNTwNc0aqA/exec',
 
   /* إصدار بايثون الحقيقي داخل المتصفح (Pyodide) */
   PYODIDE_URL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/',

@@ -13,7 +13,7 @@ const MESSAGES = {
   busy: 'الخادم مشغول، حاولي بعد لحظات.'
 };
 
-export async function call(action, payload = {}, { timeout = 25000 } = {}) {
+export async function call(action, payload = {}, { timeout = 60000 } = {}) {
   const req = Object.assign({ action }, payload);
   let res;
   if (window.__PL_TRANSPORT__) {

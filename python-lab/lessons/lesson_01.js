@@ -118,6 +118,17 @@ export default {
         ref: 'جرب بنفسك – ص117',
         snippets: ['a=5>7\nprint(a)', 'b=8<=8\nprint(b)', 'c=5+9>=14\nprint(c)']
       },
+      lab: {
+        files: { 'compare.py': 'x=5\ny=6\nprint(x==y)\nprint(x<y)\nprint(x+y!=15)\n' },
+        challenges: [
+          { text: 'عدّلي قيمة <b>y</b> فقط بحيث يطبع البرنامج <b>True</b>.', starter: 'x=5\ny=6\nz=x==y\nprint(z)\n', expect: 'True',
+            mustUse: ['z\\s*=\\s*x\\s*==\\s*y'], need: 'أبقي السطر z=x==y كما هو، وغيّري قيمة y فقط.' },
+          { text: 'اكتبي سطرًا يطبع ناتج السؤال: هل العمر <b>أكبر من أو يساوي</b> 18؟', starter: 'age = 20\n', expect: 'True',
+            mustUse: ['>=', 'age'], need: 'استخدمي المعامل >= مع المتغير age.' },
+          { text: 'اكتبي مقارنة بالمعامل <code>!=</code> ناتجها <b>False</b>.', starter: '', expect: 'False',
+            mustUse: ['!='], need: 'استخدمي المعامل != في المقارنة.' }
+        ]
+      },
       hint: 'تذكّري: الحساب أولًا (+ و -)، ثم المقارنة، والناتج دائمًا True أو False.'
     },
 
@@ -141,6 +152,15 @@ export default {
           ]
         }
       ],
+      lab: {
+        files: { 'assign.py': 'x = 5\nprint(x == 5)\nx = 7\nprint(x == 5)\n' },
+        challenges: [
+          { text: 'ضعي القيمة 10 في المتغير <b>age</b>، ثم اطبعي: هل age يساوي 10؟', starter: '', expect: 'True',
+            mustUse: ['age\\s*=\\s*10', 'age\\s*==\\s*10'], need: 'استخدمي = لوضع القيمة، ثم == للمقارنة.' },
+          { text: 'في هذا البرنامج خطأ. شغّليه واقرئي رسالة الخطأ، ثم صحّحيه ليطبع <b>True</b>.', starter: 'x = 3\nprint(x = 3)\n', expect: 'True',
+            mustUse: ['x\\s*==\\s*3'], need: 'داخل print نسأل سؤال مقارنة، فنحتاج ==.' }
+        ]
+      },
       hint: 'اقرئي = «ضعي في»، واقرئي == «هل يساوي؟».'
     },
 
@@ -203,6 +223,17 @@ export default {
         ref: 'جرب بنفسك – ص118',
         snippets: ['a=True\nb=False\nc=False\nz=(a or b) and (not c)\nprint(z)', 'a=True\nb=True\nc=True\nz=(a or b) and (not c)\nprint(z)']
       },
+      lab: {
+        files: { 'logic.py': 'a=True\nb=False\nprint(a and b)\nprint(a or b)\nprint(not a)\n' },
+        challenges: [
+          { text: 'غيّري قيمة <b>b</b> فقط ليطبع البرنامج <b>True</b>.', starter: 'a=True\nb=False\nprint(a and b)\n', expect: 'True',
+            mustUse: ['print\\(\\s*a\\s+and\\s+b\\s*\\)'], need: 'أبقي print(a and b) كما هو، وغيّري قيمة b.' },
+          { text: 'اكتبي تعبيرًا بالمعامل <code>or</code> أحد طرفيه <b>False</b> وناتجه <b>True</b>.', starter: '', expect: 'True',
+            mustUse: ['\\bor\\b', 'False'], need: 'استخدمي or، واجعلي أحد الطرفين القيمة False.' },
+          { text: 'اطبعي عكس القيمة <b>True</b> باستخدام <code>not</code>.', starter: '', expect: 'False',
+            mustUse: ['\\bnot\\b'], need: 'استخدمي المعامل not.' }
+        ]
+      },
       hint: 'استخدمي جدول الحقيقة: and مثل «و» تحتاج الاثنين، و or مثل «أو» يكفيها واحد.'
     },
 
@@ -229,6 +260,15 @@ export default {
           ]
         }
       ],
+      lab: {
+        files: { 'order.py': 'x=4\ny=3\nz=x*2>=y+5 and not x==3\nprint(z)\n' },
+        challenges: [
+          { text: 'أضيفي قوسين فقط ليصبح الناتج <b>True</b>.', starter: 'print(2 + 3 * 4 == 20)\n', expect: 'True',
+            mustUse: ['\\(\\s*2\\s*\\+\\s*3\\s*\\)\\s*\\*\\s*4'], need: 'ضعي القوسين حول عملية الجمع حتى تُنفَّذ أولًا.' },
+          { text: 'اكتبي تعبيرًا واحدًا يستخدم <code>not</code> و <code>and</code> معًا وناتجه <b>True</b>.', starter: '', expect: 'True',
+            mustUse: ['\\bnot\\b', '\\band\\b'], need: 'استخدمي not و and في السطر نفسه.' }
+        ]
+      },
       hint: 'ابدئي دائمًا من الحساب، ثم المقارنة، ثم not ثم and ثم or.'
     }
   ],

@@ -4,6 +4,7 @@
     setup();
     storeTeacherPassword_('test-pass-123');
     setSetting_('class_code', '4321');
+    flushAll_();
     __gas.save();
   }
 })();

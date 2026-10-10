@@ -1,6 +1,6 @@
 /* وضع التعلّم الموجّه: تتبّع خطوة بخطوة + «جرب بنفسك» + جدول الحقيقة + مهمة باي تشارم.
    الشرح يظهر خطوة واحدة في كل مرة (لا تُعرض كل الشروحات معًا). */
-import { $, $$, esc, arNum, highlight, pill } from './util.js';
+import { $, $$, esc, arNum, highlight, pill, store } from './util.js';
 import { createPyCharm } from './pycharm.js';
 import * as Py from './python.js';
 
@@ -42,9 +42,13 @@ function renderTraceActivity(body, act, cb) {
       <div class="card" data-i="${i}"><pre class="code">${highlight(s)}</pre>
         <div class="field"><label for="tp-${act.id}-${i}">توقّعي الناتج</label><input id="tp-${act.id}-${i}" class="input answer-input" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         <button class="btn btn-soft b-try">▶ شغّلي</button><div class="console hidden"></div><div class="try-fb"></div></div>`).join('')}</div></div>`);
+  if (act.lab) parts.push(`<div class="section"><h3>💻 جرّبي في باي تشارم</h3>
+    <p class="muted">اكتبي الكود بنفسكِ وشغّليه ▶ ثم حلّي التحديات. يُحفظ عملكِ في هذا الجهاز. (للتدريب فقط — لا يُحتسب في الدرجة)</p>
+    <div class="lab"><div class="lab-ide"></div><aside class="lab-ch"></aside></div></div>`);
   parts.push(`<div class="controls"><button class="btn btn-primary b-next" ${cb.done ? '' : 'disabled'}>التالي ←</button></div>`);
   body.innerHTML = parts.join('');
   if (act.truthTable) bindTruth(body);
+  const lab = act.lab ? renderLab($('.lab', body), act, cb) : null;
 
   let player = null;
   const tabs = $$('.tabs button', body);
@@ -80,7 +84,54 @@ function renderTraceActivity(body, act, cb) {
     };
   });
   $('.b-next', body).onclick = () => cb.onNext();
-  return { destroy() {} };
+  return { destroy() { lab && lab.destroy(); } };
+}
+
+/* ---------- مختبر باي تشارم + تحديات قصيرة (تعلّم موجّه: تغذية راجعة فورية مسموحة) ---------- */
+function renderLab(wrap, act, cb) {
+  const key = (cb.labKey || 'pl_lab') + '_' + act.id;
+  const saved = store.get(key, {});
+  const done = new Set(saved.done || []);
+  let timer;
+  const save = files => { clearTimeout(timer); timer = setTimeout(() => store.set(key, { files, done: [...done] }), 400); };
+  const ide = createPyCharm($('.lab-ide', wrap), {
+    mode: 'free', project: 'lesson1', files: saved.files || act.lab.files,
+    onChange: save, onRun: r => cb.onRun(act.id, r)
+  });
+  const chs = act.lab.challenges || [];
+  const side = $('.lab-ch', wrap);
+  side.innerHTML = `<b class="lab-h">🎯 تحديات</b>${chs.map((c, i) => `
+    <div class="ch ${done.has(i) ? 'ok' : ''}" data-i="${i}">
+      <div class="ch-t"><span class="ch-n">${done.has(i) ? '✓' : arNum(i + 1)}</span><span>${c.text}</span></div>
+      <div class="btn-row"><button class="btn btn-soft btn-sm b-open">افتحي في المحرر</button><button class="btn btn-primary btn-sm b-check">تحقّقي ✓</button></div>
+      <div class="ch-fb" aria-live="polite"></div></div>`).join('')}`;
+  const fname = i => `challenge${i + 1}.py`;
+  const norm = s => String(s || '').replace(/\r/g, '').split('\n').map(l => l.replace(/\s+$/, '')).join('\n').trim();
+  $$('.ch', side).forEach(card => {
+    const i = +card.dataset.i, c = chs[i], fb = $('.ch-fb', card);
+    $('.b-open', card).onclick = () => { ide.addFile(fname(i), c.starter || ''); fb.innerHTML = '<span class="muted">اكتبي الحل في الملف ثم اضغطي «تحقّقي»</span>'; };
+    $('.b-check', card).onclick = async () => {
+      const files = ide.files();
+      if (files[fname(i)] === undefined) { ide.addFile(fname(i), c.starter || ''); fb.innerHTML = '<span class="muted">فتحنا لكِ ملف التحدي، اكتبي الحل ثم تحقّقي</span>'; return; }
+      const code = files[fname(i)];
+      fb.textContent = '⏳';
+      const r = await Py.exec(code, { filename: fname(i), echo: false });
+      cb.onRun(act.id, { code, stdout: r.stdout, error: r.error ? r.error.type : '', simulated: !!r.simulated });
+      let msg, ok = false;
+      if (!code.trim()) msg = 'الملف فارغ. اكتبي الكود أولًا.';
+      else if (r.error) msg = `يوجد خطأ <span dir="ltr">${esc(r.error.type)}</span> — شغّلي الملف ▶ واقرئي الرسالة في نافذة Run.`;
+      else if (r.need_input != null) msg = 'البرنامج ينتظر إدخالًا. هذا التحدي لا يحتاج input().';
+      else if (norm(r.stdout) !== norm(c.expect)) msg = `الناتج الآن: <code dir="ltr">${esc(norm(r.stdout) || '(لا شيء)')}</code> والمطلوب: <code dir="ltr">${esc(c.expect)}</code>`;
+      else if ((c.mustUse || []).some(re => !new RegExp(re).test(code))) msg = 'الناتج صحيح، لكن ' + esc(c.need || 'استخدمي المطلوب في التحدي.');
+      else ok = true;
+      fb.innerHTML = ok ? '<span class="fb-ok">أحسنتِ! حللتِ التحدي ✓</span>' : `<span class="fb-bad">${msg}</span>`;
+      if (ok && !done.has(i)) {
+        done.add(i); card.classList.add('ok'); $('.ch-n', card).textContent = '✓'; save(ide.files());
+        cb.onStep(act.id, `تحدي ${i + 1} ✓`);
+      }
+    };
+  });
+  return { destroy() { clearTimeout(timer); store.set(key, { files: ide.files(), done: [...done] }); ide.destroy(); } };
 }
 
 function toast2(body, m) {

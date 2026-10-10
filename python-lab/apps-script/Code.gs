@@ -119,6 +119,7 @@ function storeTeacherPassword_(pw) {
 function newClassCode() {
   const code = randomDigits(4);
   setSetting_('class_code', code);
+  flushAll_();
   try { SpreadsheetApp.getUi().alert('رمز الدخول الجديد للطالبات: ' + code); } catch (e) {}
   return code;
 }
@@ -156,7 +157,7 @@ function fail(code, message) { const e = new Error(message || code); e.code = co
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) fail('busy', 'الخادم مشغول، حاولي بعد لحظات');
-  try { return fn(); } finally { lock.releaseLock(); }
+  try { const out = fn(); flushAll_(); return out; } finally { lock.releaseLock(); }
 }
 
 const ACTIONS = {
@@ -183,11 +184,16 @@ const ACTIONS = {
 /* =====================================================================
    أدوات الجداول
    ===================================================================== */
+let _ss = null;
 function ss_() {
+  if (_ss) return _ss;
   const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  _ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  return _ss;
 }
 
+/* كل ورقة تُقرأ مرة واحدة في الطلب، والتغييرات تُجمع وتُكتب دفعة واحدة في flushAll_()
+   (الكتابة صفًا صفًا بطيئة جدًا في جوجل شيتس وكانت تؤخر الطلبات الأخرى). */
 const _tables = {};
 function table_(key) {
   if (_tables[key]) return _tables[key];
@@ -195,13 +201,15 @@ function table_(key) {
   const sh = ss_().getSheetByName(def.name);
   if (!sh) fail('not_setup', 'لم يتم إعداد جدول البيانات. شغّلي «إعداد المنصة».');
   const n = def.headers.length;
-  let rows = null;
+  let rows = null, orig = 0, dirtyLo = Infinity, dirtyHi = -1, added = [];
   const t = {
     sh, n,
     all() {
       if (rows) return rows;
       const last = sh.getLastRow();
       rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, n).getValues();
+      orig = rows.length;
+      added.forEach(r => rows.push(r)); added = [];
       return rows;
     },
     indexOf(col, val) { const a = t.all(); for (let i = 0; i < a.length; i++) if (String(a[i][col]) === String(val)) return i; return -1; },
@@ -209,19 +217,29 @@ function table_(key) {
     filter(fn) { return t.all().filter(fn); },
     append(row) {
       const r = row.slice(0, n); while (r.length < n) r.push('');
-      sh.getRange(sh.getLastRow() + 1, 1, 1, n).setValues([r]);
-      t.all().push(r);
+      if (rows) rows.push(r); else added.push(r);     // لا نقرأ الورقة كاملة لمجرد الإضافة (مثل سجل الأحداث)
       return r;
     },
     update(i, changes) {             // changes: {colIndex: value}
       const r = t.all()[i];
       Object.keys(changes).forEach(c => { r[+c] = changes[c]; });
-      sh.getRange(i + 2, 1, 1, n).setValues([r]);
+      if (i < orig) { dirtyLo = Math.min(dirtyLo, i); dirtyHi = Math.max(dirtyHi, i); }
       return r;
+    },
+    flush() {
+      if (added.length) { sh.getRange(sh.getLastRow() + 1, 1, added.length, n).setValues(added); added = []; }
+      if (!rows) return;
+      if (dirtyHi >= 0) sh.getRange(dirtyLo + 2, 1, dirtyHi - dirtyLo + 1, n).setValues(rows.slice(dirtyLo, dirtyHi + 1));
+      if (rows.length > orig) sh.getRange(orig + 2, 1, rows.length - orig, n).setValues(rows.slice(orig));
+      orig = rows.length; dirtyLo = Infinity; dirtyHi = -1;
     }
   };
   _tables[key] = t;
   return t;
+}
+
+function flushAll_() {
+  Object.keys(_tables).forEach(k => _tables[k].flush());
 }
 
 // column indexes

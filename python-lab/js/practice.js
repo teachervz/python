@@ -21,6 +21,7 @@ export async function renderPractice(el, lesson, ctx) {
   if (at.submitted) { showResults(body, lesson, at.results, ctx); return {}; }
 
   ctx.monitor.emit('practice_started');
+  ctx.onStarted && ctx.onStarted();
   const SUBS = 'pl_subs_' + ctx.studentId, DRAFT = 'pl_draft_' + at.attemptId;
   const answered = new Set(at.answered || []);
   (store.get(SUBS, []).filter(s => s.attemptId === at.attemptId)).forEach(s => answered.add(s.qid));

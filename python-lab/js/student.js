@@ -6,6 +6,7 @@ import { renderGuided } from './guided.js';
 import { renderPractice } from './practice.js';
 import { LESSON_MODULES, LESSON_INFO } from '../lessons/index.js';
 import * as Py from './python.js';
+import { createPyCharm } from './pycharm.js';
 
 const app = $('#app');
 const STATUS_LABEL = { not_started: 'لم تبدأ', learning: 'قيد التعلم', practicing: 'قيد التطبيق', completed: 'مكتمل', needs_review: 'يحتاج إلى مراجعة', submitted: 'تم التسليم' };
@@ -117,6 +118,7 @@ function kicked(e) {
 
 function setHeader(on) {
   $('#btn-home').classList.toggle('hidden', !on);
+  $('#btn-lab').classList.toggle('hidden', !on);
   $('#btn-logout').classList.toggle('hidden', !on);
   $('#hdr-title').textContent = on && S.data ? `مختبر بايثون · ${S.data.student.first}` : 'مختبر بايثون';
 }
@@ -126,6 +128,27 @@ function setNet(online) {
   n.textContent = online ? '' : 'غير متصل — تقدمكِ محفوظ على الجهاز';
 }
 $('#btn-home').onclick = () => showCurriculum();
+$('#btn-lab').onclick = () => showLab();
+
+/* ---------- المختبر الحر: مشروع باي تشارم خاص بكل طالبة ---------- */
+function showLab() {
+  destroyView();
+  store.del('pl_last_lesson');
+  S.monitor.setActivity('', 'مختبر باي تشارم الحر');
+  const key = 'pl_lab_free_' + S.data.student.id;
+  const saved = store.get(key);
+  app.innerHTML = `<h1>🐍 باي تشارم — مشروعكِ الخاص</h1>
+    <p class="muted">جرّبي ما تريدين: أنشئي ملفًا من <b>File ← New ← Python File</b>، اكتبي الكود، ثم شغّليه بالزر ▶ أو بالضغط المطوّل على الملف ← <b>Run</b>. يُحفظ عملكِ في هذا الجهاز.</p>
+    <div class="free-lab"></div>`;
+  let t;
+  const ide = createPyCharm($('.free-lab'), {
+    mode: 'free', project: 'myProject',
+    files: saved || { 'main.py': `# مشروعي في بايثون\nname = "${S.data.student.first}"\nprint("أهلًا يا", name)\nprint(10 > 5)\n` },
+    onChange: files => { clearTimeout(t); t = setTimeout(() => store.set(key, files), 400); },
+    onRun: r => S.monitor.emit('code_run', { activity: 'المختبر الحر', data: { code: r.code, stdout: r.stdout, error: r.error } })
+  });
+  S.view = { destroy() { clearTimeout(t); store.set(key, ide.files()); ide.destroy(); } };
+}
 $('#btn-logout').onclick = async () => {
   if (!confirm('هل تريدين إنهاء الجلسة؟ احتفظي برمز الاستعادة: ' + (S.auth.recovery || ''))) return;
   try { await S.monitor.logout(); } catch (e) {}
@@ -181,6 +204,7 @@ async function openLesson(id) {
   const items = lesson.guided.map(g => ({ id: g.id, title: g.title, kind: 'guided', act: g })).concat([{ id: 'practice', title: 'التدريب المستقل', kind: 'practice' }]);
   const guidedDone = () => lesson.guided.every(g => prog(id).guided.includes(g.id));
   const submitted = () => ['completed', 'needs_review', 'submitted'].includes(prog(id).status);
+  const practicing = () => prog(id).status === 'practicing';
   let cur = store.get(posKey) || items.find(it => it.kind === 'guided' && !prog(id).guided.includes(it.id))?.id || 'practice';
 
   app.innerHTML = `<h1>${esc(lesson.title)}</h1><p class="muted">الدرس ${arNum(lesson.number)} · كتاب الطالبة ص${esc(lesson.bookPages)}</p>
@@ -191,20 +215,23 @@ async function openLesson(id) {
   function drawNav() {
     nav.innerHTML = items.map((it, k) => {
       const done = it.kind === 'guided' ? prog(id).guided.includes(it.id) : submitted();
-      const locked = it.kind === 'practice' && !guidedDone() && !submitted();
-      return `<button class="nav-item ${done ? 'done' : ''}" data-id="${it.id}" aria-current="${it.id === cur}" ${locked ? 'disabled title="أكملي التعلّم الموجّه أولًا"' : ''}><span class="ck">${done ? '✓' : arNum(k + 1)}</span><span>${esc(it.title)}</span></button>`;
+      const locked = it.kind === 'practice' ? !guidedDone() && !submitted() : practicing();
+      const why = it.kind === 'practice' ? 'أكملي التعلّم الموجّه أولًا' : 'الشرح مقفل أثناء التدريب المستقل حتى تسلّمي';
+      return `<button class="nav-item ${done ? 'done' : ''}" data-id="${it.id}" aria-current="${it.id === cur}" ${locked ? `disabled title="${why}"` : ''}><span class="ck">${done ? '✓' : arNum(k + 1)}</span><span>${esc(it.title)}</span></button>`;
     }).join('');
     $$('.nav-item:not([disabled])', nav).forEach(b => b.onclick = () => go(b.dataset.id));
   }
   function go(itemId) {
-    const it = items.find(x => x.id === itemId);
+    let it = items.find(x => x.id === itemId);
     if (it.kind === 'practice' && !guidedDone() && !submitted()) { toast('أكملي أنشطة التعلّم الموجّه أولًا'); return; }
+    if (it.kind === 'guided' && practicing()) { it = items[items.length - 1]; itemId = it.id; }
     destroyView(); cur = itemId; store.set(posKey, cur); drawNav();
     if (pane.getBoundingClientRect().top < 0) pane.scrollIntoView({ block: 'start' });
     S.monitor.setActivity(id, it.kind === 'practice' ? 'التدريب المستقل' : it.title);
     if (it.kind === 'guided') {
       S.view = renderGuided(pane, it.act, {
         done: prog(id).guided.includes(it.id),
+        labKey: 'pl_lab_' + S.data.student.id + '_' + id,
         onStep: (a, step) => S.monitor.emit('guided_step', { lesson: id, activity: a, step }),
         onDone: a => {
           if (!prog(id).guided.includes(a)) { setProg(id, x => { x.guided.push(a); }); S.monitor.emit('guided_done', { lesson: id, activity: a }); S.monitor.flush(); drawNav(); toast('أحسنتِ! أكملتِ هذا النشاط ✓'); }
@@ -217,6 +244,7 @@ async function openLesson(id) {
     } else {
       renderPractice(pane, lesson, {
         token: S.auth.token, sessionId: S.auth.sessionId, studentId: S.data.student.id, settings: S.data.settings, monitor: S.monitor,
+        onStarted: () => { setProg(id, x => { x.status = 'practicing'; }); drawNav(); },
         onFinished: res => { setProg(id, x => { x.status = res && !res.pending ? (res.mastered ? 'completed' : 'needs_review') : 'submitted'; x.percent = 100; if (res && res.percent != null) x.score = res.percent; }); drawNav(); refreshProgress(); }
       }).then(v => { S.view = v; });
     }
