@@ -1,9 +1,12 @@
-"""اختبار شامل من البداية للنهاية (Playwright + Chromium).
-يشغّل Code.gs الحقيقي داخل المتصفح فوق جدول وهمي (tests/gas-mock.js)، وبايثون الحقيقي (Pyodide من الإنترنت).
+"""اختبار شامل من البداية للنهاية (Playwright + Chromium) وبايثون الحقيقي (Pyodide من الإنترنت).
+الخادم:
+  PL_BACKEND=supabase  ← دالة api الحقيقية في PostgreSQL محلي (tests/pg_local.py، نفس محرك Supabase)
+  غير ذلك             ← Code.gs الحقيقي فوق جدول وهمي (tests/gas-mock.js) + اختبار النقل إلى Supabase
 
 التشغيل:
   python3 tests/serve.py 8765 &
   python3 tests/e2e_test.py [مجلد_الصور]
+  PL_BACKEND=supabase python3 tests/e2e_test.py [مجلد_الصور]
 يتطلب: pip install playwright && python -m playwright install chromium
 """
 import asyncio
@@ -17,6 +20,10 @@ from playwright.async_api import async_playwright
 BASE = 'http://127.0.0.1:8765/tests/'
 OUT = sys.argv[1] if len(sys.argv) > 1 else '/tmp'
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SB = os.environ.get('PL_BACKEND') == 'supabase'
+STUDENT, TEACHER = ('sb_student.html', 'sb_teacher.html') if SB else ('student.html', 'teacher.html')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pg_local as P  # noqa: E402
 results = []
 
 
@@ -26,10 +33,36 @@ def check(name, ok, info=''):
 
 
 async def gas(pg, req):
+    if SB:
+        return P.api(req)
     return await pg.evaluate('r => window.__gas.call(r)', req)
 
 
+YN = "case when {} then 'نعم' else 'لا' end"
+ST_LBL = "case p.status when 'not_started' then 'لم تبدأ' when 'learning' then 'قيد التعلم' when 'practicing' then 'قيد التطبيق' when 'completed' then 'مكتمل' else 'يحتاج إلى مراجعة' end"
+SE_LBL = "case s.status when 'active' then 'نشطة' when 'idle' then 'خاملة' when 'hidden' then 'الصفحة مخفية' when 'disconnected' then 'انقطع الاتصال' else 'انتهت الجلسة' end"
+SB_SHEETS = {   # نفس أعمدة أوراق جوجل وترتيبها، لتعمل الفحوص نفسها على الخادمين
+    'الطالبات': f"select id, first_name, family_name, section, created_at, {YN.format('active')}, recovery_code, notes, coalesce(token_hash,'') from students order by created_at",
+    'الجلسات': f"select s.id, s.student_id, st.first_name||' '||st.family_name, st.section, s.started_at, s.last_seen, s.last_input, {SE_LBL}, s.lesson, s.activity, coalesce(s.ended_at::text,'') from sessions s join students st on st.id=s.student_id order by s.started_at",
+    'تقدم الدروس': f"select p.student_id||'|'||p.lesson_id, p.student_id, '', '', 0, '', p.percent, {ST_LBL}, p.last_activity, coalesce(p.score::text,''), case when p.mastered then 'متقن' when p.mastered = false then 'يحتاج تدريبًا إضافيًا' else '' end, array_to_string(p.guided, ','), p.hints, p.attempts from progress p order by p.last_activity",
+    'نتائج التقييم': f"select id, student_id, lesson_id, question_id, attempt_no, response::text, {YN.format('correct')}, score, submitted_at, attempt_id, objective, level from answers order by submitted_at",
+    'مراقبة الجلسات': "select id, student_id, section, session_id, type, at, lesson, activity, duration_s, connection, details from events order by received_at, at",
+    'التنبيهات': "select id, student_id, '', '', type, message, opened_at, coalesce(closed_at::text,''), coalesce(acknowledged_at::text,''), session_id from alerts order by opened_at",
+    'تشغيل الأكواد': "select id, student_id, lesson, activity, code, stdout, error, at from code_runs order by at",
+    'الإعدادات': "select key, case when value ~ '^\\d+$' then value::int::text else value end, description from settings",
+}
+
+
 async def sheet(pg, name):
+    if SB:
+        rows = [list(r) for r in P.query(SB_SHEETS[name])]
+        for r in rows:
+            for i, v in enumerate(r):
+                if isinstance(v, str) and v.isdigit() and name == 'الإعدادات':
+                    r[i] = int(v)
+                elif hasattr(v, 'is_integer') and float(v).is_integer():
+                    r[i] = int(v)
+        return [['(عناوين)'] * 20] + rows
     return await pg.evaluate('n => window.__gas.sheet(n)', name)
 
 
@@ -54,8 +87,12 @@ async def student_flow(ctx):
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
     pg.on('dialog', lambda d: asyncio.ensure_future(d.accept()))
-    await pg.goto(BASE + 'student.html')
-    await pg.evaluate('() => { localStorage.clear(); window.__gas.reset(); }')
+    await pg.goto(BASE + STUDENT)
+    if SB:
+        P.reset()
+        await pg.evaluate('() => localStorage.clear()')
+    else:
+        await pg.evaluate('() => { localStorage.clear(); window.__gas.reset(); }')
     await pg.reload()
 
     # ---- الدخول ----
@@ -257,8 +294,88 @@ async def student_flow(ctx):
     check('المختبر الحر: الملفات تبقى محفوظة', True)
     await pg.click('#btn-home')
 
-    ans = await sheet(pg, 'نتائج التقييم')
-    check('12 إجابة محفوظة في ورقة «نتائج التقييم»', len(ans) - 1 == 12, str(len(ans) - 1))
+    # ---- الدرس الثاني: الجمل الشرطية ----
+    await pg.wait_for_selector('.lesson-card[data-id="lesson_02"]')
+    check('الدرس 2 يُفتح بعد إتقان الدرس 1', not await pg.locator('.lesson-card[data-id="lesson_02"]').is_disabled())
+    await pg.click('.lesson-card[data-id="lesson_02"]')
+    await pg.wait_for_selector('.tracer')
+    await walk_tracer(pg)
+    await pg.locator('.tabs button').nth(1).click()
+    for _ in range(4):
+        await pg.click('.b-nxt')
+    check('if...else: السطر 3 مشطوب (تُخطّي)', await pg.locator('.codeview .ln.skip').count() == 1)
+    await pg.wait_for_selector('.b-next:not([disabled])')
+    await pg.click('.b-next')
+    # g2: المخطط الانسيابي
+    await pg.wait_for_selector('.flowchart')
+    await pg.locator('.tabs button').nth(1).click()
+    for _ in range(4):
+        await pg.click('.b-nxt')
+    on = await pg.evaluate("() => [document.querySelector('.fc-node.on') && document.querySelector('.fc-node.on').dataset.node, document.querySelectorAll('.fc-line.p-no.on').length > 0, document.querySelectorAll('.codeview .ln.skip').length]")
+    check('المخطط الانسيابي: مسار «خطأ» مضيء والسطر 4 متخطّى', on == ['o', True, 1], str(on))
+    await shot(pg, 's_l2_flow')
+    await walk_tracer(pg)
+    await pg.wait_for_selector('.b-next:not([disabled])')
+    await pg.click('.b-next')
+    # g3: المسافة البادئة — خطأ حقيقي من بايثون
+    await pg.wait_for_selector('.tracer')
+    await pg.click('.b-run')
+    await pg.wait_for_function("document.querySelector('.tracer .out').textContent.includes('IndentationError')", timeout=30000)
+    out = await pg.inner_text('.tracer .out')
+    check('المسافة البادئة: رسالة بايثون الحقيقية مطابقة للشرح', "expected an indented block after 'if' statement on line 2" in out, out)
+    await walk_tracer(pg)
+    await pg.wait_for_selector('.b-next:not([disabled])')
+    await pg.click('.b-next')
+    # g4: رقم موجب مع input + تدريب 3 + تحدٍّ بمدخلات
+    await pg.wait_for_selector('.tracer')
+    await pg.click('.b-run')
+    await pg.wait_for_function("document.querySelector('.tracer .out').textContent.includes('استمر في البرمجة')", timeout=30000)
+    check('مثال 2 يعمل بالمدخل 5', '5 رقم موجب' in await pg.inner_text('.tracer .out'))
+    await walk_tracer(pg)
+    await pg.fill('#tp-g4_positive-1', '12')
+    await pg.locator('.tryit .b-try').nth(1).click()
+    await pg.wait_for_selector('.tryit .card[data-i="1"] .fb-ok', timeout=30000)
+    check('لنطبق معًا – تدريب 3 بالمدخلات 5 و12 و9', True)
+    await pg.locator('.ch .b-open').nth(0).click()
+    await pg.fill('.lab .pc-ta', 'x=int(input())\nprint("رقم سالب")\n')
+    await pg.locator('.ch .b-check').nth(0).click()
+    await pg.wait_for_selector('.ch .fb-bad', timeout=30000)
+    check('تحدٍّ بعدة مدخلات: الحل الناقص يُرفض', '6' in await pg.locator('.ch-fb').nth(0).inner_text())
+    await pg.fill('.lab .pc-ta', 'x=int(input())\nif x<0:\n    print("رقم سالب")\n')
+    await pg.locator('.ch .b-check').nth(0).click()
+    await pg.wait_for_selector('.ch.ok', timeout=30000)
+    check('تحدٍّ بعدة مدخلات: الحل الصحيح يُقبل', True)
+    await pg.wait_for_selector('.b-next:not([disabled])')
+    await pg.click('.b-next')
+    await pg.wait_for_selector('.q-prompt', timeout=15000)
+    choice = {0: 1, 1: 2, 3: 2, 5: 2, 7: 2}
+    text = {2: 'ناجح', 4: 'تم', 9: '7'}
+    for k in range(12):
+        await goto_q(k)
+        if k in choice:
+            await pg.locator('.opt').nth(choice[k]).click()
+        elif k in text:
+            await pg.fill('.q-ans textarea', text[k])
+        elif k == 6:
+            await pg.fill('.blank', '>=')
+        elif k == 8:
+            for i in [1, 2, 0]:
+                await pg.click(f'.order-src button[data-i="{i}"]')
+        elif k == 10:
+            await pg.fill('.pc-ta', 'grade = int(input())\nif grade >= 50:\n    print("ناجحة")\nprint("انتهى")\n')
+        elif k == 11:
+            code = await pg.input_value('.pc-ta')
+            await pg.fill('.pc-ta', code.replace('temp < 40', 'temp > 40'))
+        await send()
+    await pg.click('.b-finish')
+    await pg.wait_for_selector('.result-big', timeout=30000)
+    pct = await pg.inner_text('.result-big')
+    check('الدرس 2: التسليم والنتيجة ١٠٠٪', '١٠٠' in pct, pct)
+    await shot(pg, 's_l2_results')
+    await pg.click('#btn-home')
+
+    ans = [[]] + [r for r in (await sheet(pg, 'نتائج التقييم'))[1:] if r[2] == 'lesson_01']
+    check('12 إجابة للدرس 1 محفوظة في ورقة «نتائج التقييم»', len(ans) - 1 == 12, str(len(ans) - 1))
     check('كل الإجابات صحيحة في الجدول', all(r[6] == 'نعم' for r in ans[1:]), str([r[3] for r in ans[1:] if r[6] != 'نعم']))
     prog = await sheet(pg, 'تقدم الدروس')
     row = prog[1]
@@ -284,14 +401,20 @@ async def student_flow(ctx):
     check('عودة الطالبة تغلق التنبيه', all(r[7] for r in al[1:] if r[4] == 'hidden'))
 
     # ---- انقطاع الشبكة: الحفظ في الجهاز ثم الإرسال ----
-    await pg.evaluate('() => { window.__offline = true; window.dispatchEvent(new Event("offline")); }')
+    if SB:
+        await pg.context.set_offline(True)          # قطع الشبكة فعليًا: الطلبات إلى «Supabase» المحلي تفشل
+    else:
+        await pg.evaluate('() => { window.__offline = true; window.dispatchEvent(new Event("offline")); }')
     await pg.evaluate(hide)
     await pg.evaluate(show)
     await pg.wait_for_timeout(600)
     queued = await pg.evaluate("() => (JSON.parse(localStorage.getItem('pl_queue_' + JSON.parse(localStorage.getItem('pl_auth')).studentId)) || []).length")
     check('الأحداث تُحفظ على الجهاز أثناء الانقطاع', queued >= 3, str(queued))
     check('مؤشر «غير متصل» يظهر', await pg.locator('#net').is_visible())
-    await pg.evaluate('() => { window.__offline = false; window.dispatchEvent(new Event("online")); }')
+    if SB:
+        await pg.context.set_offline(False)
+    else:
+        await pg.evaluate('() => { window.__offline = false; window.dispatchEvent(new Event("online")); }')
     await pg.wait_for_timeout(1200)
     queued2 = await pg.evaluate("() => (JSON.parse(localStorage.getItem('pl_queue_' + JSON.parse(localStorage.getItem('pl_auth')).studentId)) || []).length")
     ev = await sheet(pg, 'مراقبة الجلسات')
@@ -363,31 +486,65 @@ async def backend_tests(pg):
     await gas(pg, {'action': 'tSettings', 'teacherToken': tt, 'values': {'feedback_mode': 'after_exercise'}})
 
     # الأداء: مزامنة 40 حدثًا = عدد قليل من عمليات الكتابة
-    await pg.evaluate('() => { window.__gasWrites = 0; }')
+    import time
+    t0 = time.time()
+    if not SB:
+        await pg.evaluate('() => { window.__gasWrites = 0; }')
     many = [{'id': f'perf-{i}', 'type': 'guided_step', 'at': '2026-01-01T00:00:00Z', 'lesson': 'lesson_01', 'activity': 'g2_compare', 'step': str(i)} for i in range(40)]
     sr = await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': a['sessionId'], 'events': many})
-    writes = await pg.evaluate('() => window.__gasWrites')
-    check('مزامنة 40 حدثًا تُكتب دفعة واحدة (≤ 3 عمليات كتابة)', sr['ok'] and len(sr['accepted']) == 40 and writes <= 3, str(writes))
+    if SB:
+        dt = time.time() - t0
+        check('مزامنة 40 حدثًا في أقل من ثانية', sr['ok'] and len(sr['accepted']) == 40 and dt < 1, f'{dt:.2f}s')
+    else:
+        writes = await pg.evaluate('() => window.__gasWrites')
+        check('مزامنة 40 حدثًا تُكتب دفعة واحدة (≤ 3 عمليات كتابة)', sr['ok'] and len(sr['accepted']) == 40 and writes <= 3, str(writes))
     # الخمول وانقطاع الاتصال
     sid = a['sessionId']
     await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': sid, 'events': [{'id': 'i1', 'type': 'idle', 'at': '2020-01-01T00:00:00Z'}]})
     await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': sid, 'events': [{'id': 'i2', 'type': 'idle', 'at': '2020-01-01T00:00:00Z'}]})
     al = [r for r in (await sheet(pg, 'التنبيهات'))[1:] if r[1] == a['student']['id'] and r[4] == 'idle' and not r[7]]
     check('تنبيه الخمول دون تكرار', len(al) == 1, str(len(al)))
-    await pg.evaluate("""sid => { const db = window.__gas.db(); const rows = db.sheets['الجلسات'].rows; rows.forEach(r => { if (r[0] === sid) { r[5] = new Date(Date.now() - 10 * 60000); r[7] = 'نشطة'; } }); window.__gas.save(); }""", sid)
+    if SB:
+        P.query("update sessions set last_seen = now() - interval '10 minutes', status = 'active' where id = %s", (sid,))
+    else:
+        await pg.evaluate("""sid => { const db = window.__gas.db(); const rows = db.sheets['الجلسات'].rows; rows.forEach(r => { if (r[0] === sid) { r[5] = new Date(Date.now() - 10 * 60000); r[7] = 'نشطة'; } }); window.__gas.save(); }""", sid)
     d = await gas(pg, {'action': 'tDashboard', 'teacherToken': tt})
     me = [s for s in d['students'] if s['id'] == a['student']['id']][0]
     check('انقطاع النبض ← «انقطع الاتصال» وتنبيه', me['session']['status'] == 'انقطع الاتصال' and any(x['type'] == 'disconnected' and not x['closed'] and x['student'] == me['id'] for x in d['alerts']))
     await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': sid, 'events': []})
     ev = [r for r in (await sheet(pg, 'مراقبة الجلسات'))[1:] if r[1] == a['student']['id']]
     check('عودة الاتصال تُسجَّل «returned» وتُغلق التنبيه', ev[-1][4] == 'returned')
-    check('التحليلات تُبنى', (await gas(pg, {'action': 'tAnalytics', 'teacherToken': tt}))['rows'] > 5)
-    an = await sheet(pg, 'تحليلات الصف')
-    check('ورقة التحليلات تقارن الفصلين', an[2][:4] == ['المؤشر', 'الفصل أ', 'الفصل ب', 'الكل'], str(an[2]))
+    if SB:
+        an = P.query('select * from class_analytics')
+        check('عرض التحليلات يقارن الفصلين', {r[2] for r in an} == {'أ', 'ب'} and (await gas(pg, {'action': 'tAnalytics', 'teacherToken': tt}))['ok'], str(an[:2]))
+    else:
+        check('التحليلات تُبنى', (await gas(pg, {'action': 'tAnalytics', 'teacherToken': tt}))['rows'] > 5)
+        an = await sheet(pg, 'تحليلات الصف')
+        check('ورقة التحليلات تقارن الفصلين', an[2][:4] == ['المؤشر', 'الفصل أ', 'الفصل ب', 'الكل'], str(an[2]))
     # وقت مستقبلي من الجهاز لا يُقبل
     await gas(pg, {'action': 'sync', 'token': a['token'], 'sessionId': sid, 'events': [{'id': 'fut', 'type': 'visible', 'at': '2099-01-01T00:00:00Z'}]})
     fut = [r for r in (await sheet(pg, 'مراقبة الجلسات'))[1:] if r[0] == 'fut'][0]
     check('توقيت مستقبلي من الجهاز يُستبدل بوقت الخادم', str(fut[5])[:4] != '2099', str(fut[5]))
+
+
+async def migration_test(pg):
+    """نقل بيانات جدول جوجل الوهمي إلى PostgreSQL (نفس دالة Supabase) ثم التحقق"""
+    P.reset()
+    msg = await pg.evaluate("() => exportToSupabase_(location.origin, 'local-test-key', 'test-pass-123')")
+    check('النقل إلى Supabase ينجح', msg.startswith('✅'), msg)
+    for sheet_name, table in [('الطالبات', 'students'), ('نتائج التقييم', 'answers'), ('مراقبة الجلسات', 'events'), ('تقدم الدروس', 'progress'), ('المحاولات', 'attempts')]:
+        n_sheet = len([r for r in await pg.evaluate('n => window.__gas.sheet(n)', sheet_name)][1:])
+        n_db = P.query(f'select count(*) from {table}')[0][0]
+        check(f'النقل: عدد صفوف «{sheet_name}» مطابق', n_sheet == n_db, f'{n_sheet} vs {n_db}')
+    before = P.query('select (select count(*) from answers) + (select count(*) from events) + (select count(*) from students)')[0][0]
+    msg2 = await pg.evaluate("() => exportToSupabase_(location.origin, 'local-test-key', 'test-pass-123')")
+    after = P.query('select (select count(*) from answers) + (select count(*) from events) + (select count(*) from students)')[0][0]
+    check('إعادة النقل لا تكرر الصفوف', msg2.startswith('✅') and before == after, f'{before} vs {after}')
+    tok = await pg.evaluate("() => JSON.parse(localStorage.getItem('pl_auth')).token")
+    r = P.api({'action': 'resume', 'token': tok})
+    check('الطالبة تدخل بحسابها نفسه بعد النقل', r.get('ok') and r['student']['first'] == 'سارة' and any(p['lesson'] == 'lesson_02' and p['status'] == 'completed' for p in r['progress']), str(r)[:200])
+    bad = await pg.evaluate("() => exportToSupabase_(location.origin, 'local-test-key', 'wrong')")
+    check('النقل بكلمة مرور خاطئة يُرفض', bad.startswith('❌'), bad)
 
 
 async def teacher_flow(ctx):
@@ -395,7 +552,7 @@ async def teacher_flow(ctx):
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
     pg.on('dialog', lambda d: asyncio.ensure_future(d.accept()))
-    await pg.goto(BASE + 'teacher.html')
+    await pg.goto(BASE + TEACHER)
     await pg.fill('#pw', 'wrong-pass')
     await pg.click('form button')
     await pg.wait_for_function("document.querySelector('.err').textContent.length > 0")
@@ -456,10 +613,12 @@ async def main():
         pg = await student_flow(ctx)
         await backend_tests(pg)
         await teacher_flow(ctx)
+        if not SB:
+            await migration_test(pg)
         # آيباد عمودي
         ipad = await browser.new_context(viewport={'width': 820, 'height': 1180}, has_touch=True, is_mobile=True)
         ip = await ipad.new_page()
-        await ip.goto(BASE + 'student.html')
+        await ip.goto(BASE + STUDENT)
         await ip.wait_for_timeout(800)
         await shot(ip, 'ipad_entry')
         wide = await ip.evaluate('document.documentElement.scrollWidth <= window.innerWidth')

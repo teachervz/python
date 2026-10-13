@@ -3,6 +3,7 @@
 import { $, $$, esc, arNum, highlight, pill, store } from './util.js';
 import { createPyCharm } from './pycharm.js';
 import * as Py from './python.js';
+import { flowchartSvg, highlightFlow } from './flowchart.js';
 
 /* act: نشاط من lesson.guided · cb: {onStep, onDone, onHint, onRun, onPractice, done:boolean} */
 export function renderGuided(el, act, cb) {
@@ -38,10 +39,10 @@ function renderTraceActivity(body, act, cb) {
   if (act.truthTable) parts.push(truthTableHtml());
   parts.push(`<div class="tabs" role="tablist">${act.examples.map((e, i) => `<button role="tab" data-i="${i}" aria-selected="${i === 0}">${act.examples.length > 1 ? 'مثال ' + arNum(i + 1) : 'المثال'}</button>`).join('')}</div>
     <div class="tracer"></div>`);
-  if (act.tryIt) parts.push(`<div class="section"><h3>💻 ${esc(act.tryIt.ref)}</h3><p class="muted">اكتبي توقّعكِ أولًا، ثم شغّلي المقطع ببايثون وقارني.</p><div class="tryit">${act.tryIt.snippets.map((s, i) => `
-      <div class="card" data-i="${i}"><pre class="code">${highlight(s)}</pre>
+  if (act.tryIt) parts.push(`<div class="section"><h3>💻 ${esc(act.tryIt.ref)}</h3><p class="muted">اكتبي توقّعكِ أولًا، ثم شغّلي المقطع ببايثون وقارني.</p><div class="tryit">${act.tryIt.snippets.map((s0, i) => { const s = typeof s0 === 'string' ? { code: s0 } : s0; return `
+      <div class="card" data-i="${i}">${s.ref ? `<b>${esc(s.ref)}</b>` : ''}<pre class="code">${highlight(s.code)}</pre>${s.inputs ? `<p class="muted">المدخلات: <code dir="ltr">${esc(s.inputs.join(' ، '))}</code></p>` : ''}
         <div class="field"><label for="tp-${act.id}-${i}">توقّعي الناتج</label><input id="tp-${act.id}-${i}" class="input answer-input" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-        <button class="btn btn-soft b-try">▶ شغّلي</button><div class="console hidden"></div><div class="try-fb"></div></div>`).join('')}</div></div>`);
+        <button class="btn btn-soft b-try">▶ شغّلي</button><div class="console hidden"></div><div class="try-fb"></div></div>`; }).join('')}</div></div>`);
   if (act.lab) parts.push(`<div class="section"><h3>💻 جرّبي في باي تشارم</h3>
     <p class="muted">اكتبي الكود بنفسكِ وشغّليه ▶ ثم حلّي التحديات. يُحفظ عملكِ في هذا الجهاز. (للتدريب فقط — لا يُحتسب في الدرجة)</p>
     <div class="lab"><div class="lab-ide"></div><aside class="lab-ch"></aside></div></div>`);
@@ -72,15 +73,16 @@ function renderTraceActivity(body, act, cb) {
   show(0);
 
   $$('.tryit .card', body).forEach(card => {
-    const i = +card.dataset.i, code = act.tryIt.snippets[i];
+    const i = +card.dataset.i, s0 = act.tryIt.snippets[i], sn = typeof s0 === 'string' ? { code: s0 } : s0, code = sn.code;
     $('.b-try', card).onclick = async () => {
       const out = $('.console', card), fb = $('.try-fb', card), guess = $('input', card).value.trim();
       out.classList.remove('hidden'); out.textContent = '⏳';
-      const r = await Py.exec(code, { filename: 'try.py', echo: true });
+      const r = await Py.exec(code, { filename: 'try.py', inputs: sn.inputs || [], echo: false });
       const text = (r.stdout || '') + (r.error ? r.error.type + ': ' + r.error.message : '');
+      const lines = text.trim().split('\n');
       out.innerHTML = `<span class="lbl">${r.simulated ? 'ناتج محاكى' : 'ناتج بايثون'}</span>${esc(text)}`;
       cb.onRun(act.id, { code, stdout: r.stdout, error: r.error ? r.error.type : '', simulated: !!r.simulated });
-      if (guess) fb.innerHTML = guess === text.trim() ? '<p class="fb-ok">توقّعكِ صحيح ✓</p>' : '<p class="fb-bad">الناتج مختلف عن توقّعكِ — راجعي ترتيب المعاملات وجرّبي مرة أخرى</p>';
+      if (guess) fb.innerHTML = (guess === text.trim() || guess === lines[lines.length - 1].trim()) ? '<p class="fb-ok">توقّعكِ صحيح ✓</p>' : '<p class="fb-bad">الناتج مختلف عن توقّعكِ — راجعي ترتيب المعاملات وجرّبي مرة أخرى</p>';
     };
   });
   $('.b-next', body).onclick = () => cb.onNext();
@@ -115,15 +117,21 @@ function renderLab(wrap, act, cb) {
       if (files[fname(i)] === undefined) { ide.addFile(fname(i), c.starter || ''); fb.innerHTML = '<span class="muted">فتحنا لكِ ملف التحدي، اكتبي الحل ثم تحقّقي</span>'; return; }
       const code = files[fname(i)];
       fb.textContent = '⏳';
-      const r = await Py.exec(code, { filename: fname(i), echo: false });
-      cb.onRun(act.id, { code, stdout: r.stdout, error: r.error ? r.error.type : '', simulated: !!r.simulated });
+      const tests = c.tests || [{ stdin: c.stdin || [], expect: c.expect }];
       let msg, ok = false;
       if (!code.trim()) msg = 'الملف فارغ. اكتبي الكود أولًا.';
-      else if (r.error) msg = `يوجد خطأ <span dir="ltr">${esc(r.error.type)}</span> — شغّلي الملف ▶ واقرئي الرسالة في نافذة Run.`;
-      else if (r.need_input != null) msg = 'البرنامج ينتظر إدخالًا. هذا التحدي لا يحتاج input().';
-      else if (norm(r.stdout) !== norm(c.expect)) msg = `الناتج الآن: <code dir="ltr">${esc(norm(r.stdout) || '(لا شيء)')}</code> والمطلوب: <code dir="ltr">${esc(c.expect)}</code>`;
-      else if ((c.mustUse || []).some(re => !new RegExp(re).test(code))) msg = 'الناتج صحيح، لكن ' + esc(c.need || 'استخدمي المطلوب في التحدي.');
-      else ok = true;
+      else for (const t of tests) {
+        const r = await Py.exec(code, { filename: fname(i), inputs: t.stdin || [], echo: false });
+        cb.onRun(act.id, { code, stdout: r.stdout, error: r.error ? r.error.type : '', simulated: !!r.simulated });
+        const when = t.stdin && t.stdin.length ? `عند إدخال <code dir="ltr">${esc(t.stdin.join(' ، '))}</code>: ` : '';
+        if (r.error) { msg = when + `يوجد خطأ <span dir="ltr">${esc(r.error.type)}</span> — شغّلي الملف ▶ واقرئي الرسالة في نافذة Run.`; break; }
+        if (r.need_input != null) { msg = (t.stdin && t.stdin.length) ? 'البرنامج يطلب مدخلات أكثر من المطلوب.' : 'البرنامج ينتظر إدخالًا. هذا التحدي لا يحتاج input().'; break; }
+        if (norm(r.stdout) !== norm(t.expect)) { msg = when + `الناتج <code dir="ltr">${esc(norm(r.stdout) || '(لا شيء)')}</code> والمطلوب <code dir="ltr">${esc(norm(t.expect) || '(لا شيء)')}</code>`; break; }
+      }
+      if (!msg) {
+        if ((c.mustUse || []).some(re => !new RegExp(re).test(code))) msg = 'الناتج صحيح، لكن ' + esc(c.need || 'استخدمي المطلوب في التحدي.');
+        else ok = true;
+      }
       fb.innerHTML = ok ? '<span class="fb-ok">أحسنتِ! حللتِ التحدي ✓</span>' : `<span class="fb-bad">${msg}</span>`;
       if (ok && !done.has(i)) {
         done.add(i); card.classList.add('ok'); $('.ch-n', card).textContent = '✓'; save(ide.files());
@@ -148,7 +156,9 @@ export function createTracer(el, ex, cb) {
   el.innerHTML = `<p class="muted">${esc(ex.ref || '')}</p>
     <div class="trace">
       <div><div class="codeview" aria-label="الكود">${lines.map((l, k) => `<div class="ln" data-k="${k + 1}"><span class="no">${k + 1}</span><span class="src">${highlight(l) || ' '}</span></div>`).join('')}</div>
-        <div class="console" aria-live="polite"><span class="lbl">نافذة التشغيل</span><span class="out"></span></div></div>
+        <div class="console" aria-live="polite"><span class="lbl">نافذة التشغيل</span><span class="out"></span></div>
+        ${ex.inputs ? `<p class="muted">المدخلات في هذا المثال: <code dir="ltr">${esc(ex.inputs.join(' ، '))}</code></p>` : ''}
+        ${ex.flow ? `<details class="flow-box" open><summary>المخطط الانسيابي للمقطع البرمجي</summary>${flowchartSvg(ex.flow)}</details>` : ''}</div>
       <div class="explain">
         <div class="stepno" aria-live="polite"></div>
         <div class="stepbox" aria-live="polite"></div>
@@ -173,12 +183,16 @@ export function createTracer(el, ex, cb) {
     const s = ex.steps[i];
     q('.stepno').textContent = i < 0 ? `${arNum(N)} خطوات` : `الخطوة ${arNum(i + 1)} من ${arNum(N)}`;
     q('.stepbox').innerHTML = i < 0 ? 'اضغطي <b>الخطوة التالية</b> لتبدأ بايثون بقراءة الكود سطرًا سطرًا.' : s.text;
+    const skipped = new Set(); let path = null;
+    for (let k = 0; k <= i; k++) { (ex.steps[k].skip || []).forEach(n => skipped.add(n)); if (ex.steps[k].path) path = ex.steps[k].path; }
     $$('.ln', el).forEach(ln => {
       const k = +ln.dataset.k;
       ln.classList.toggle('cur', !!s && k === s.line);
-      ln.classList.toggle('ran', !!s && k < s.line);
+      ln.classList.toggle('ran', !!s && k < s.line && !skipped.has(k));
       ln.classList.toggle('todo', !s || k > s.line);
+      ln.classList.toggle('skip', skipped.has(k));
     });
+    highlightFlow($('.flowchart', el), s && s.node, path);
     const ev = s && s.eval;
     const eb = q('.evalbox');
     eb.classList.toggle('hidden', !ev);
@@ -203,7 +217,7 @@ export function createTracer(el, ex, cb) {
   if (hb) hb.onclick = () => { const b = q('.hintbox'); b.textContent = cb.hint; b.classList.remove('hidden'); if (!hinted) { hinted = true; cb.onHint(); } };
   q('.b-run').onclick = async () => {
     const o = q('.out'); o.textContent = '⏳ جارٍ التشغيل…';
-    const r = await Py.exec(ex.code, { filename: 'example.py', echo: true });
+    const r = await Py.exec(ex.code, { filename: 'example.py', inputs: ex.inputs || [], echo: true });
     o.textContent = (r.stdout || '') + (r.error ? r.error.tb || r.error.type : '');
     q('.console .lbl').textContent = r.simulated ? 'نافذة التشغيل (تنفيذ محاكى)' : 'نافذة التشغيل (بايثون حقيقي)';
     cb.onRun({ code: ex.code, stdout: r.stdout, error: r.error ? r.error.type : '', simulated: !!r.simulated });

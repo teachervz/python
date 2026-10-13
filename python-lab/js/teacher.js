@@ -22,7 +22,7 @@ const QTYPE = { multiple_choice: 'اختيار من متعدد', identify_operat
 function showLogin(msg) {
   $('#tools').classList.add('hidden');
   app.innerHTML = `<div class="card center-card"><h1>دخول المعلمة</h1>
-    ${CONFIG.API_URL || window.__PL_TRANSPORT__ ? '' : '<p class="fb-bad">لم يُضبط رابط الخادم في js/config.js — راجعي docs/SETUP.md</p>'}
+    ${(CONFIG.BACKEND === 'supabase' ? CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY : CONFIG.API_URL) || window.__PL_TRANSPORT__ ? '' : '<p class="fb-bad">لم يُضبط رابط الخادم في js/config.js — راجعي docs/SETUP.md</p>'}
     <form id="f"><div class="field"><label for="pw">كلمة المرور</label><input id="pw" type="password" class="input" autocomplete="current-password" required></div>
     <p class="err" role="alert">${esc(msg || '')}</p><button class="btn btn-primary" style="width:100%">دخول</button></form></div>`;
   $('#f').onsubmit = async e => {
@@ -102,7 +102,7 @@ function render() {
     <div class="btn-row" style="justify-content:space-between">
       <div class="card" style="padding:10px 16px"><span class="muted">رمز دخول الطالبات</span> <b style="font-size:1.6rem;letter-spacing:4px" dir="ltr">${esc(d.settings.class_code)}</b>
         <button class="btn btn-soft btn-sm" id="b-code">رمز جديد</button></div>
-      <div class="btn-row"><button class="btn btn-line" id="b-csv">تصدير CSV</button><a class="btn btn-line" href="${esc(d.sheetUrl)}" target="_blank" rel="noopener">فتح جدول البيانات</a><button class="btn btn-line" id="b-refresh">تحديث الآن</button></div>
+      <div class="btn-row"><button class="btn btn-line" id="b-csv">تصدير CSV</button>${d.sheetUrl ? `<a class="btn btn-line" href="${esc(d.sheetUrl)}" target="_blank" rel="noopener">فتح جدول البيانات</a>` : ''}<button class="btn btn-line" id="b-refresh">تحديث الآن</button></div>
     </div>
     <div class="cards">
       ${stat(c.total, 'إجمالي الطالبات')}${stat(c.active, 'نشطات الآن')}${stat(c.guided, 'في التعلّم الموجّه')}${stat(c.indep, 'في التدريب المستقل')}

@@ -1,7 +1,16 @@
-/* ضعي هنا رابط تطبيق الويب الذي يظهر بعد نشر Google Apps Script
-   (Deploy ← New deployment ← Web app). ينتهي الرابط بـ /exec
-   راجعي docs/SETUP.md للخطوات. */
-export const CONFIG = {
+/* إعدادات الاتصال بالخادم.
+   BACKEND = 'supabase' بعد إنشاء مشروع Supabase (انظري docs/SUPABASE.md)،
+   أو 'apps_script' لاستخدام سكربت جوجل وجدول البيانات. */
+const OVERRIDE = (typeof window !== 'undefined' && window.__PL_CONFIG__) || {};   // للاختبارات فقط
+
+export const CONFIG = Object.assign({
+  BACKEND: 'supabase',
+
+  /* Supabase: Project Settings ← API (أو Data API) */
+  SUPABASE_URL: 'https://xuyjzxoluyvuwlafabbj.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_KEaawcwcXMTnBE_yJ_zpUQ_oydlqBir',   // المفتاح العام (آمن للنشر)
+
+  /* Google Apps Script (الخادم السابق) */
   API_URL: 'https://script.google.com/macros/s/AKfycbygpwr-uNlrO7AEA-Cg0T56N_kZjVSg0sNjO6UZYSfg1TXwXuMK5n_WlQOlUNTwNc0aqA/exec',
 
   /* إصدار بايثون الحقيقي داخل المتصفح (Pyodide) */
@@ -15,4 +24,4 @@ export const CONFIG = {
 
   /* كل كم ثانية تتحدّث لوحة المعلمة */
   DASHBOARD_POLL_SECONDS: 15
-};
+}, OVERRIDE);

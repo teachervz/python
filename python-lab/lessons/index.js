@@ -2,7 +2,8 @@
    لإضافة درس: أنشئي lessons/lesson_02.js بنفس شكل lesson_01.js، أضيفيه هنا،
    وأضيفي مفاتيحه في apps-script/AnswerKeys.gs، ثم اجعلي «متاح في المنصة» = نعم في ورقة «الدروس». */
 export const LESSON_MODULES = {
-  lesson_01: () => import('./lesson_01.js')
+  lesson_01: () => import('./lesson_01.js'),
+  lesson_02: () => import('./lesson_02.js')
 };
 
 /* بيانات عرض مختصرة لبطاقات المنهج (من curriculum/curriculum_index.json) */

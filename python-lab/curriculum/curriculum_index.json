@@ -271,8 +271,8 @@
       "number": 2,
       "title": "الجمل الشرطية في البايثون",
       "book_pages": "122–128",
-      "detail_level": "outline",
-      "implementation_status": "pending",
+      "detail_level": "full",
+      "implementation_status": "implemented",
       "concepts": [
         "أنواع الجمل الشرطية: if البسيطة، if...else، if...elif (ص122)",
         "أمثلة على أنواع الجمل الشرطية بدرجة الطالبة grade (ص123)",
@@ -298,7 +298,14 @@
           "ref": "ص128 تدريب 4",
           "text": "ارسم المخطط الانسيابي واكتب مقطعًا يتحقق من العمر المناسب لقيادة السيارة"
         }
-      ]
+      ],
+      "implementation_note": "منفّذ ومختبر محليًا على الخادمين (جوجل و Supabase). 4 أنشطة موجهة مع مخطط انسيابي وتتبّع الأسطر المتخطّاة، 8 تحديات، 12 سؤالًا.",
+      "files": [
+        "lessons/lesson_02.js",
+        "apps-script/AnswerKeys.gs (lesson_02)",
+        "supabase/answer_keys.sql"
+      ],
+      "textbook_examples_verified": true
     },
     {
       "id": "lesson_03",

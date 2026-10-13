@@ -6,11 +6,31 @@ import sys
 from functools import partial
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = dict(http.server.SimpleHTTPRequestHandler.extensions_map,
                           **{'.gs': 'text/javascript', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json'})
+
+    def do_POST(self):
+        # محاكاة Supabase: /rest/v1/rpc/api ← دالة api في PostgreSQL المحلي (للاختبار فقط)
+        if self.path.split('?')[0] != '/rest/v1/rpc/api':
+            self.send_error(404)
+            return
+        import json
+        import pg_local
+        body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+        if not self.headers.get('apikey'):
+            out, code = {'message': 'No API key found in request'}, 401
+        else:
+            out, code = pg_local.api(body.get('req', {})), 200
+        data = json.dumps(out, ensure_ascii=False).encode('utf-8')
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')

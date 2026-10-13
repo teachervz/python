@@ -67,7 +67,71 @@ function onOpen() {
     .addItem('2) تعيين كلمة مرور المعلمة', 'setTeacherPassword')
     .addItem('رمز دخول جديد للطالبات', 'newClassCode')
     .addItem('تحديث تحليلات الصف', 'rebuildAnalytics')
+    .addSeparator()
+    .addItem('نقل البيانات إلى Supabase', 'exportToSupabase')
     .addToUi();
+}
+
+/* =====================================================================
+   نقل كل البيانات إلى Supabase (يُشغَّل مرة واحدة من القائمة)
+   يرسل كل ورقة على دفعات إلى api(tImport) في قاعدة Supabase.
+   رموز دخول الطالبات تُنقل أيضًا، فتبقى الطالبات مسجّلات دون دخول جديد.
+   ===================================================================== */
+function exportToSupabase() {
+  const ui = SpreadsheetApp.getUi();
+  const ask = (title, msg) => {
+    const r = ui.prompt(title, msg, ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) throw new Error('cancelled');
+    return r.getResponseText().trim();
+  };
+  let url, key, pw;
+  try {
+    url = ask('نقل إلى Supabase (1/3)', 'الصقي Project URL من Supabase (مثل https://abcd.supabase.co):').replace(/\/+$/, '');
+    key = ask('نقل إلى Supabase (2/3)', 'الصقي المفتاح العام anon أو publishable:');
+    pw = ask('نقل إلى Supabase (3/3)', 'اكتبي كلمة مرور المعلمة التي عيّنتِها في Supabase:');
+  } catch (e) { return; }
+  const report = exportToSupabase_(url, key, pw);
+  ui.alert(report);
+}
+
+function exportToSupabase_(url, key, pw) {
+  const rows = k => table_(k).all();
+  const plan = [
+    ['settings', rows('settings').map(r => ({ key: r[0], value: String(r[1]) }))],
+    ['lessons', rows('lessons').map(r => ({ id: r[LS.id], order: r[LS.order], enabled: r[LS.enabled], prerequisite: r[LS.prereq] }))],
+    ['students', rows('students').map(r => ({ id: r[ST.id], first: r[ST.first], family: r[ST.family], section: r[ST.section], created: iso_(r[ST.created]),
+      active: r[ST.active], recovery: String(r[ST.recovery]), notes: r[ST.notes], token_hash: r[ST.token] }))],
+    ['sessions', rows('sessions').map(r => ({ id: r[SE.id], student: r[SE.student], start: iso_(r[SE.start]), seen: iso_(r[SE.seen]), input: iso_(r[SE.input]),
+      status: r[SE.status], lesson: r[SE.lesson], activity: r[SE.activity], end: iso_(r[SE.end]) }))],
+    ['attempts', rows('attempts').map(r => ({ id: r[AT.id], student: r[AT.student], lesson: r[AT.lesson], no: r[AT.no], start: iso_(r[AT.start]),
+      submitted: iso_(r[AT.submitted]), score: String(r[AT.score]), max: String(r[AT.max]), percent: String(r[AT.pct]), released: r[AT.released], state: r[AT.state] }))],
+    ['progress', rows('progress').map(r => ({ student: r[PR.student], lesson: lessonIdFromKey_(r[PR.key]), percent: String(r[PR.pct]), status: r[PR.status],
+      last: iso_(r[PR.last]), score: String(r[PR.score]), mastery: r[PR.mastery], guided: String(r[PR.guided] || ''), hints: String(r[PR.hints]), attempts: String(r[PR.attempts]) }))],
+    ['answers', rows('answers').map(r => ({ id: r[AN.id], student: r[AN.student], lesson: r[AN.lesson], qid: r[AN.qid], no: String(r[AN.no]), response: String(r[AN.response]),
+      correct: r[AN.correct], score: String(r[AN.score]), time: iso_(r[AN.time]), attempt: r[AN.attempt], objective: r[AN.objective], level: r[AN.level] }))],
+    ['events', rows('events').map(r => ({ id: r[EV.id], student: r[EV.student], section: r[EV.section], session: r[EV.session], type: r[EV.type], time: iso_(r[EV.time]),
+      lesson: r[EV.lesson], activity: r[EV.activity], duration: String(r[EV.duration]), conn: r[EV.conn], details: r[EV.details] }))],
+    ['alerts', rows('alerts').map(r => ({ id: r[AL.id], student: r[AL.student], type: r[AL.type], message: r[AL.msg], opened: iso_(r[AL.opened]),
+      closed: iso_(r[AL.closed]), ack: iso_(r[AL.ack]), session: r[AL.session] }))],
+    ['runs', rows('runs').map(r => ({ id: r[0], student: r[1], lesson: r[2], activity: r[3], code: String(r[4]), stdout: String(r[5]), error: String(r[6]), time: iso_(r[7]) }))]
+  ];
+  const lines = [];
+  for (const [tbl, data] of plan) {
+    const clean = data.filter(o => Object.keys(o).some(k => o[k] !== '' && o[k] != null) && (o.id !== '' || tbl === 'settings' || tbl === 'progress'));
+    let n = 0;
+    for (let i = 0; i < clean.length; i += 300) {
+      const res = UrlFetchApp.fetch(url + '/rest/v1/rpc/api', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { apikey: key },
+        payload: JSON.stringify({ req: { action: 'tImport', password: pw, table: tbl, rows: clean.slice(i, i + 300) } })
+      });
+      let out;
+      try { out = JSON.parse(res.getContentText()); } catch (e) { out = { ok: false, message: res.getContentText().slice(0, 200) }; }
+      if (!out.ok) return `❌ توقف النقل عند «${tbl}»: ${out.message || out.error || ('HTTP ' + res.getResponseCode())}\nما نُقل قبله محفوظ، ويمكن إعادة التشغيل بأمان (لا تتكرر الصفوف).`;
+      n += out.imported || 0;
+    }
+    lines.push(`${tbl}: ${n}`);
+  }
+  return '✅ تم نقل البيانات إلى Supabase\n\n' + lines.join('\n');
 }
 
 function setup() {
@@ -274,7 +338,7 @@ function lessons_() {
   return table_('lessons').all()
     .filter(r => r[LS.id])
     .map(r => ({ id: String(r[LS.id]), number: +r[LS.num], title: String(r[LS.title]), order: +r[LS.order] || +r[LS.num],
-      enabled: r[LS.enabled] !== 'لا', prerequisite: String(r[LS.prereq] || ''), available: r[LS.available] === 'نعم' }))
+      enabled: r[LS.enabled] !== 'لا', prerequisite: String(r[LS.prereq] || ''), available: !!ANSWER_KEYS[String(r[LS.id])] }))   // الدرس متاح إذا كان له مفاتيح إجابات على الخادم
     .sort((a, b) => a.order - b.order);
 }
 function lessonById_(id) { return lessons_().filter(l => l.id === id)[0] || null; }

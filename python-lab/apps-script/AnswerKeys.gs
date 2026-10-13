@@ -76,5 +76,78 @@ const ANSWER_KEYS = {
         ],
         explanation: 'نحتاج الشرطين معًا، فنستبدل or بـ and:\nok = present and homework' }
     }
+  },
+
+  lesson_02: {
+    guidedCount: 4,
+    objectives: {
+      O1: 'أنواع الجمل الشرطية',
+      O2: 'صيغة جملة if (الشرط والنقطتان)',
+      O3: 'المسافة البادئة',
+      O4: 'تتبّع تنفيذ جملة if',
+      O5: 'المخطط الانسيابي والمقطع البرمجي',
+      O6: 'if مع مدخلات المستخدم'
+    },
+    questions: {
+      l02_q01: { type: 'multiple_choice', level: 'basic', objective: 'O1', points: 1,
+        answer: { choice: 1 },
+        explanation: 'نستخدم الجملة الشرطية if لاتخاذ القرارات في بايثون.' },
+
+      l02_q02: { type: 'multiple_choice', level: 'basic', objective: 'O2', points: 1,
+        answer: { choice: 2 },
+        explanation: 'النقطتان : بعد الشرط ضروريتان، مثل: if grade>=10:' },
+
+      l02_q03: { type: 'predict_output', level: 'basic', objective: 'O4', points: 1,
+        answer: { output: 'ناجح' },
+        explanation: '14 >= 10 صحيح، فتُنفَّذ العبارة المزاحة وتطبع «ناجح».' },
+
+      l02_q04: { type: 'identify_operator', level: 'basic', objective: 'O2', points: 1,
+        answer: { choice: 2 },
+        explanation: 'المعامل != يعني «لا يساوي». أما = فللإسناد ولا يصلح داخل الشرط.' },
+
+      l02_q05: { type: 'predict_output', level: 'intermediate', objective: 'O4', points: 1,
+        answer: { output: 'تم' },
+        explanation: '3 > 5 خطأ، فيُتخطّى السطر المزاح، ويُنفَّذ print("تم") لأنه خارج if.' },
+
+      l02_q06: { type: 'multiple_choice', level: 'intermediate', objective: 'O3', points: 1,
+        answer: { choice: 2 },
+        explanation: 'السطران مزاحان فكلاهما داخل if، و 4 < 0 خطأ، فلا يُطبع شيء.' },
+
+      l02_q07: { type: 'complete_line', level: 'intermediate', objective: 'O2', points: 1,
+        answer: { accept: ['>='] },
+        explanation: '«18 أو أكثر» تعني أكبر من أو يساوي: age >= 18. لو استخدمنا > لما طُبع شيء عندما يكون العمر 18.' },
+
+      l02_q08: { type: 'find_error', level: 'intermediate', objective: 'O3', points: 1,
+        answer: { choice: 2 },
+        explanation: 'السطر 3 يجب أن يكون مزاحًا بمسافة بادئة لأنه يتبع if، وإلا تظهر IndentationError.' },
+
+      l02_q09: { type: 'order_lines', level: 'intermediate', objective: 'O5', points: 1,
+        // ترتيب فهارس الأسطر كما تظهر في السؤال: ['    print(x,"رقم موجب")', 'x=int(input())', 'if x>0:']
+        answer: { order: [1, 2, 0] },
+        explanation: 'نقرأ الرقم أولًا x=int(input())، ثم الشرط if x>0:، ثم العبارة المزاحة print(x,"رقم موجب").' },
+
+      l02_q10: { type: 'predict_output', level: 'application', objective: 'O4', points: 2,
+        answer: { output: '7' },
+        explanation: '-3 < 2 صحيح، فتصبح a = -3 + 10 = 7، ثم تُطبع.' },
+
+      l02_q11: { type: 'write_program', level: 'application', objective: 'O6', points: 2,
+        mustUse: ['\\bif\\b'],
+        tests: [
+          { stdin: ['75'], expected: 'ناجحة\nانتهى' },
+          { stdin: ['50'], expected: 'ناجحة\nانتهى' },
+          { stdin: ['30'], expected: 'انتهى' }
+        ],
+        explanation: 'حل ممكن:\ngrade = int(input())\nif grade >= 50:\n    print("ناجحة")\nprint("انتهى")' },
+
+      l02_q12: { type: 'modify_condition', level: 'application', objective: 'O2', points: 2,
+        starter: 'temp=int(input())\nif temp < 40:\n    print("درجة حرارة مرتفعة")\nprint("تم القياس")\n',
+        onlyLine: 2,
+        tests: [
+          { stdin: ['45'], expected: 'درجة حرارة مرتفعة\nتم القياس' },
+          { stdin: ['40'], expected: 'تم القياس' },
+          { stdin: ['20'], expected: 'تم القياس' }
+        ],
+        explanation: '«أكبر من 40» تعني المعامل >:\nif temp > 40:' }
+    }
   }
 };

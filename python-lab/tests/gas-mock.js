@@ -53,6 +53,14 @@
     get: k => { const e = db.cache[k]; return e && e.exp > Date.now() ? e.v : null; },
     put: (k, v, s) => { db.cache[k] = { v: String(v), exp: Date.now() + (s || 600) * 1000 }; }
   }) };
+  /* UrlFetchApp: طلب متزامن (للاختبار فقط) */
+  window.UrlFetchApp = { fetch(url, o) {
+    const x = new XMLHttpRequest(); x.open((o.method || 'get').toUpperCase(), url, false);
+    if (o.contentType) x.setRequestHeader('Content-Type', o.contentType);
+    Object.keys(o.headers || {}).forEach(k => x.setRequestHeader(k, o.headers[k]));
+    x.send(o.payload || null);
+    return { getContentText: () => x.responseText, getResponseCode: () => x.status };
+  } };
   window.LockService = { getScriptLock: () => ({ tryLock: () => true, waitLock() {}, releaseLock() {} }) };
   window.ContentService = { MimeType: { JSON: 'json' }, createTextOutput: s => ({ _s: s, setMimeType() { return this; }, getContent() { return this._s; } }) };
 
