@@ -178,7 +178,7 @@ on conflict (key) do nothing;
 
 insert into lessons (id, number, title, sort_order, enabled, prerequisite) values
   ('lesson_01', 1, 'المعاملات الشرطية والمنطقية في بايثون – اتخاذ القرارات', 1, true, ''),
-  ('lesson_02', 2, 'الجمل الشرطية في البايثون', 2, true, 'lesson_01'),
+  ('lesson_02', 2, 'الجمل الشرطية في البايثون', 2, true, ''),
   ('lesson_03', 3, 'اتخاذ القرارات', 3, true, 'lesson_02'),
   ('lesson_04', 4, 'الشروط المتداخلة', 4, true, 'lesson_03'),
   ('lesson_05', 5, 'الحلقات', 5, true, 'lesson_04'),
